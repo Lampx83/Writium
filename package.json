@@ -1,0 +1,44 @@
+{
+  "name": "@ai-portal/writium",
+  "version": "1.0.0",
+  "description": "Writium - document writing app, standalone or embedded in AI Portal",
+  "main": "dist/server.js",
+  "scripts": {
+    "install:all": "npm install && cd frontend && npm install",
+    "dev": "tsx watch src/server.ts",
+    "dev:docker": "nodemon --legacy-watch --watch src --ext ts,json -e ts,json --exec \"tsx src/server.ts\"",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist frontend/.next frontend/out public node_modules frontend/node_modules",
+    "db:schema": "node scripts/run-standalone-schema.mjs",
+    "build:frontend": "node scripts/build-frontend.mjs",
+    "build:all": "npm run build && npm run build:frontend",
+    "pack": "npm run build && BUILD_FOR=embed node scripts/build-frontend.mjs && node scripts/pack.mjs",
+    "docker:dev": "docker compose -f docker-compose.dev.yml up"
+  },
+  "keywords": ["write", "ai-portal", "application"],
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express-session": "^1.18.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.1",
+    "openai": "^5.16.0",
+    "pg": "^8.16.3",
+    "html-to-docx": "^1.8.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "adm-zip": "^0.5.16",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/express-session": "^1.18.0",
+    "@types/node": "^22",
+    "@types/pg": "^8.11.10",
+    "@types/ws": "^8.5.13",
+    "nodemon": "^3.1.9",
+    "tsx": "^4.19.2",
+    "typescript": "^5"
+  }
+}

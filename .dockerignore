@@ -1,0 +1,14 @@
+node_modules
+frontend/node_modules
+dist
+frontend/.next
+frontend/out
+public
+.env
+.env.*
+!.env.example
+.git
+*.log
+npm-debug.log*
+.DS_Store
+package/*.zip

@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+public/
+
+# Env (keep secret; use env.example as template)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Package output (if zip in package/)
+package/*.zip
+
+# TypeScript
+*.tsbuildinfo
+
+# Optional: test / coverage
+coverage/

@@ -1,0 +1,69 @@
+# Writium dev mode: one command starts postgres + backend + frontend.
+#   docker compose -f docker-compose.dev.yml up   # or: npm run docker:dev
+# Backend only (no frontend):  docker compose -f docker-compose.dev.yml up postgres writium
+# Backend: http://localhost:3002  |  Frontend: http://localhost:3003
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: writium
+    ports:
+      - "5432:5432"
+    volumes:
+      - writium_pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d writium"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  writium:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: npx nodemon --legacy-watch --watch src --ext ts,json -e ts,json --exec "npx tsx src/server.ts"
+    ports:
+      - "3002:3002"
+    environment:
+      RUN_MODE: standalone
+      AUTH_MODE: standalone
+      DB_SCHEMA: writium
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/writium
+      WRITIUM_URL: http://localhost:3002
+      PORT: 3002
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3002,http://localhost:3003
+    env_file:
+      - .env
+    volumes:
+      - ./src:/app/src
+      - ./schema:/app/schema
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3003:3003"
+    environment:
+      NEXT_PUBLIC_WRITE_API_BASE: http://localhost:3002
+      NEXT_TELEMETRY_DISABLED: "1"
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+      - frontend_next:/app/.next
+    depends_on:
+      - writium
+
+volumes:
+  writium_pgdata_dev:
+  frontend_node_modules:
+  frontend_next:

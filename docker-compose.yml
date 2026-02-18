@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: writium
+    ports:
+      - "5432:5432"
+    volumes:
+      - writium_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d writium"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  writium:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      RUN_MODE: standalone
+      AUTH_MODE: standalone
+      DB_SCHEMA: writium
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/writium
+      WRITIUM_URL: http://localhost:3002
+      PORT: 3002
+      CORS_ORIGIN: http://localhost:3000,http://localhost:3002
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  writium_pgdata:
