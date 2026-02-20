@@ -1,12 +1,1 @@
-{
-  "id": "write",
-  "alias": "write",
-  "name": "Writium",
-  "description": "Article writing app with AI support, DOCX export.",
-  "version": "1.0.0",
-  "type": "embedded",
-  "hasBackend": true,
-  "icon": "FileText",
-  "defaultBaseUrl": "http://localhost:3002/v1",
-  "defaultDomainUrl": "http://localhost:3002"
-}
+{"id":"writium","alias":"writium","name":"Viết bài","description":"Article writing app with AI support, DOCX export.","version":"1.0.0","type":"embedded","hasBackend":true,"icon":"FileText"}

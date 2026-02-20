@@ -3,8 +3,8 @@ const forEmbed = process.env.BUILD_FOR === "embed"
 const nextConfig = {
   output: "export",
   trailingSlash: true,
-  basePath: forEmbed ? "/embed/write" : "",
-  assetPrefix: forEmbed ? "/embed/write" : "",
+  basePath: forEmbed ? "/embed/writium" : "",
+  assetPrefix: forEmbed ? "/embed/writium" : "",
   images: { unoptimized: true },
 }
 

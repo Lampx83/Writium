@@ -4,7 +4,7 @@
  */
 import { Router, Request, Response } from "express"
 import { query } from "../lib/db"
-import { getCurrentUserId, getCurrentUser } from "../lib/auth"
+import { getCurrentUser } from "../lib/auth"
 import { getEnv } from "../lib/env"
 
 const router = Router()
@@ -27,14 +27,23 @@ function dbErrorMessage(err: unknown): string {
   return e?.message ?? "Database error"
 }
 
-/** Ensure user exists in users table (needed for guest when no record yet). */
-async function ensureUserExists(userId: string, email: string, displayName: string): Promise<void> {
+/** Ensure user exists in users table; returns the effective user id (same as userId or existing row when email already exists, e.g. in Portal). */
+async function ensureUserExists(userId: string, email: string, displayName: string): Promise<string> {
   const safeEmail = email === "guest@local" ? `guest-${userId}@local` : email
-  await query(
+  const rows = await query<{ id: string }>(
     `INSERT INTO __SCHEMA__.users (id, email, display_name) VALUES ($1::uuid, $2, $3)
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name
+     RETURNING id`,
     [userId, String(safeEmail).slice(0, 255), (displayName || "Guest").slice(0, 200)]
   )
+  return (rows.rows[0]?.id ?? userId) as string
+}
+
+/** Current user's effective id (for ownership): same as session id or DB row id when embedded in Portal. Use for all article ownership checks. */
+async function getEffectiveUserId(req: Request): Promise<string | null> {
+  const user = await getCurrentUser(req)
+  if (!user?.id) return null
+  return ensureUserExists(user.id, user.email ?? "guest@local", user.name ?? "Guest")
 }
 
 // POST /export-docx – no login required (HTML → DOCX only)
@@ -98,7 +107,7 @@ async function isArticleOwner(articleId: string, userId: string): Promise<boolea
 // GET / – list articles
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const currentUser = await getCurrentUser(req)
     const userEmail = currentUser?.email ?? undefined
@@ -221,7 +230,7 @@ router.patch("/shared/:token", async (req: Request, res: Response) => {
 // POST /:id/share
 router.post("/:id/share", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Invalid ID" })
@@ -244,7 +253,7 @@ router.post("/:id/share", async (req: Request, res: Response) => {
 // DELETE /:id/share
 router.delete("/:id/share", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Invalid ID" })
@@ -261,7 +270,7 @@ const MAX_VERSIONS_PER_ARTICLE = 100
 // GET /:id/versions
 router.get("/:id/versions", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Invalid ID" })
@@ -283,7 +292,7 @@ router.get("/:id/versions", async (req: Request, res: Response) => {
 // GET /:id/versions/:vid
 router.get("/:id/versions/:vid", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     const vid = (req.params as { vid?: string }).vid
@@ -306,7 +315,7 @@ router.get("/:id/versions/:vid", async (req: Request, res: Response) => {
 // POST /:id/versions/:vid/restore
 router.post("/:id/versions/:vid/restore", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const currentUser = await getCurrentUser(req)
     const userEmail = currentUser?.email ?? undefined
@@ -340,7 +349,7 @@ router.post("/:id/versions/:vid/restore", async (req: Request, res: Response) =>
 // DELETE /:id/versions/:vid
 router.delete("/:id/versions/:vid", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     const vid = (req.params as { vid?: string }).vid
@@ -362,7 +371,7 @@ router.delete("/:id/versions/:vid", async (req: Request, res: Response) => {
 // POST /:id/versions/clear
 router.post("/:id/versions/clear", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Invalid ID" })
@@ -386,7 +395,7 @@ router.post("/:id/versions/clear", async (req: Request, res: Response) => {
 // GET /:id
 router.get("/:id", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const currentUser = await getCurrentUser(req)
     const userEmail = currentUser?.email ?? undefined
@@ -410,10 +419,9 @@ router.get("/:id", async (req: Request, res: Response) => {
 // POST /
 router.post("/", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
-    if (!userId) return res.status(401).json({ error: "Not logged in" })
+    const effectiveUserId = await getEffectiveUserId(req)
+    if (!effectiveUserId) return res.status(401).json({ error: "Not logged in" })
     const currentUser = await getCurrentUser(req)
-    await ensureUserExists(userId, currentUser?.email ?? "guest@local", currentUser?.name ?? "Guest")
     const body = req.body ?? {}
     const { title = "Untitled document", content = "", template_id = null, project_id = null } = body
     const refsRaw = body.references_json ?? body.references ?? []
@@ -423,7 +431,7 @@ router.post("/", async (req: Request, res: Response) => {
       `INSERT INTO __SCHEMA__.write_articles (user_id, project_id, title, content, template_id, references_json)
        VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb)
        RETURNING id, user_id, project_id, title, content, template_id, COALESCE(references_json, '[]'::jsonb) AS references_json, created_at, updated_at`,
-      [userId, projectIdVal, String(title).slice(0, 500), String(content), template_id || null, refsJson]
+      [effectiveUserId, projectIdVal, String(title).slice(0, 500), String(content), template_id || null, refsJson]
     )
     res.status(201).json({ article: rows.rows[0] })
   } catch (err: unknown) {
@@ -436,7 +444,7 @@ router.post("/", async (req: Request, res: Response) => {
 // PATCH /:id
 router.patch("/:id", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const currentUser = await getCurrentUser(req)
     const userEmail = currentUser?.email ?? undefined
@@ -510,7 +518,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
 // DELETE /:id
 router.delete("/:id", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Invalid ID" })
@@ -529,7 +537,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
 // GET /:id/comments
 router.get("/:id/comments", async (req: Request, res: Response) => {
   try {
-    const userId = await getCurrentUserId(req)
+    const userId = await getEffectiveUserId(req)
     if (!userId) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Invalid ID" })
@@ -554,21 +562,22 @@ router.post("/:id/comments", async (req: Request, res: Response) => {
     if (!user) return res.status(401).json({ error: "Not logged in" })
     const id = paramId(req)
     if (!UUID_RE.test(id)) return res.status(400).json({ error: "Invalid ID" })
-    const canAccess = await isArticleOwner(id, user.id)
+    const effectiveUserId = await getEffectiveUserId(req)
+    if (!effectiveUserId) return res.status(401).json({ error: "Not logged in" })
+    const canAccess = await isArticleOwner(id, effectiveUserId)
     if (!canAccess) return res.status(404).json({ error: "No permission to comment on this article" })
     const body = req.body ?? {}
     const content = String(body.content ?? "").trim()
     const parentId = body.parent_id && UUID_RE.test(String(body.parent_id).trim()) ? String(body.parent_id).trim() : null
     const commentId = body.id && UUID_RE.test(String(body.id).trim()) ? String(body.id).trim() : null
     if (!content) return res.status(400).json({ error: "Comment content cannot be empty" })
-    await ensureUserExists(user.id, user.email ?? "guest@local", user.name ?? "Guest")
     const authorDisplay = (user.name || user.email || "User").slice(0, 200)
     if (commentId) {
       const rows = await query(
         `INSERT INTO __SCHEMA__.write_article_comments (id, article_id, user_id, author_display, content, parent_id)
          VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6::uuid)
          RETURNING id, article_id, user_id, author_display, content, parent_id, created_at`,
-        [commentId, id, user.id, authorDisplay, content, parentId]
+        [commentId, id, effectiveUserId, authorDisplay, content, parentId]
       )
       return res.status(201).json({ comment: rows.rows[0] })
     }
@@ -576,7 +585,7 @@ router.post("/:id/comments", async (req: Request, res: Response) => {
       `INSERT INTO __SCHEMA__.write_article_comments (article_id, user_id, author_display, content, parent_id)
        VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid)
        RETURNING id, article_id, user_id, author_display, content, parent_id, created_at`,
-      [id, user.id, authorDisplay, content, parentId]
+      [id, effectiveUserId, authorDisplay, content, parentId]
     )
     res.status(201).json({ comment: rows.rows[0] })
   } catch (err: unknown) {
@@ -588,19 +597,19 @@ router.post("/:id/comments", async (req: Request, res: Response) => {
 // DELETE /:id/comments/:commentId
 router.delete("/:id/comments/:commentId", async (req: Request, res: Response) => {
   try {
-    const user = await getCurrentUser(req)
-    if (!user) return res.status(401).json({ error: "Not logged in" })
+    const effectiveUserId = await getEffectiveUserId(req)
+    if (!effectiveUserId) return res.status(401).json({ error: "Not logged in" })
     const articleId = paramId(req)
     const commentId = (req.params as { commentId?: string }).commentId?.trim()
     if (!UUID_RE.test(articleId) || !commentId || !UUID_RE.test(commentId)) return res.status(400).json({ error: "Invalid ID" })
-    const isOwner = await isArticleOwner(articleId, user.id)
+    const isOwner = await isArticleOwner(articleId, effectiveUserId)
     const commentRow = await query(
       `SELECT id, user_id FROM __SCHEMA__.write_article_comments WHERE id = $1::uuid AND article_id = $2::uuid LIMIT 1`,
       [commentId, articleId]
     )
     const comment = commentRow.rows[0] as { id: string; user_id: string } | undefined
     if (!comment) return res.status(404).json({ error: "Comment not found" })
-    const isCommentAuthor = comment.user_id === user.id
+    const isCommentAuthor = comment.user_id === effectiveUserId
     if (!isOwner && !isCommentAuthor) return res.status(403).json({ error: "Only the article owner or comment author can delete" })
     await query(
       `DELETE FROM __SCHEMA__.write_article_comments WHERE id = $1::uuid AND article_id = $2::uuid`,

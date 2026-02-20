@@ -670,7 +670,7 @@ export function WriteView() {
         <main className="flex min-h-0 min-w-0 flex-1 flex-col">
           {!hasArticle ? (
             <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-              Select an article on the left or create a new one1.
+              Select an article on the left or create a new one.
             </div>
           ) : (
             <>
